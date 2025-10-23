@@ -177,7 +177,8 @@ class Generator(torch.jit.ScriptModule):
         ##################################################################
         # 4️⃣ Auto-generate n_samples of random z and forward through generator
         ##################################################################
-        z = torch.randn(n_samples, self.latent_dim, device=next(self.parameters()).device)
+        device = list(self.parameters())[0].device
+        z = torch.randn(n_samples, self.latent_dim, device=device)
         return self.forward_given_samples(z)
         ##################################################################
         #                          END OF YOUR CODE                      #
