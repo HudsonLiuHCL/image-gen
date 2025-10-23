@@ -75,7 +75,7 @@ def train_model(
     log_period=10000,
     amp_enabled=True,
 ):
-    torch.backends.cudnn.benchmark = True # speed up training
+    torch.backends.cudnn.benchmark = True  # speed up training
     ds_transforms = build_transforms()
     train_loader = torch.utils.data.DataLoader(
         Dataset(root="../datasets/CUB_200_2011_32", transform=ds_transforms),
@@ -92,122 +92,110 @@ def train_model(
         scheduler_generator,
     ) = get_optimizers_and_schedulers(gen, disc)
 
-    scaler = torch.cuda.amp.GradScaler()
+    scaler = torch.cuda.amp.GradScaler(enabled=amp_enabled)
 
     iters = 0
     fids_list = []
     iters_list = []
-    pbar = tqdm(total = num_iterations)
+    pbar = tqdm(total=num_iterations)
+
     while iters < num_iterations:
         for train_batch in train_loader:
+            # ------------------------- D UPDATE -------------------------
             with torch.cuda.amp.autocast(enabled=amp_enabled):
-                train_batch = train_batch.cuda()
-                
-                ####################### UPDATE DISCRIMINATOR #####################
-                ##################################################################
-                # TODO 1.2: compute generator, discriminator, and interpolated outputs
-                # 1. Compute generator output
-                # Note: The number of samples must match the batch size.
-                # 2. Compute discriminator output on the train batch.
-                # 3. Compute the discriminator output on the generated data.
-                ##################################################################
-                train_batch = train_batch.cuda()
+                train_batch = train_batch.cuda(non_blocking=True)
 
-                # 1️⃣ Generator output
-                fake_batch = gen.forward_given_samples(
-                    torch.randn(train_batch.size(0), 128, device=train_batch.device)
-                )
+                # 1) Generator produces fakes matching the current batch size
+                z = torch.randn(train_batch.size(0), 128, device=train_batch.device)
+                fake_batch = gen.forward_given_samples(z)
+
+                # 2) Discriminator predictions
                 discrim_real = disc(train_batch)
-                discrim_fake = disc(fake_batch.detach().clone())  
-                ##################################################################
-                #                          END OF YOUR CODE                      #
-                ##################################################################
+                # clone() protects G’s graph from any in-place ops inside D
+                discrim_fake = disc(fake_batch.detach().clone())
 
-                ##################################################################
-                # TODO 1.5 Compute the interpolated batch and run the
-                # discriminator on it.
-                ###################################################################
+                # 3) Interpolated batch for gradient penalty path (kept for later parts)
                 alpha = torch.rand(train_batch.size(0), 1, 1, 1, device=train_batch.device)
                 interp = (alpha * train_batch + (1 - alpha) * fake_batch).requires_grad_(True)
                 discrim_interp = disc(interp)
-                ##################################################################
-                #                          END OF YOUR CODE                      #
-                ##################################################################
 
-            discriminator_loss = disc_loss_fn(
-                discrim_real, discrim_fake, discrim_interp, interp, lamb
-            )
-            
+                # 4) D loss
+                discriminator_loss = disc_loss_fn(
+                    discrim_real, discrim_fake, discrim_interp, interp, lamb
+                )
+
             optim_discriminator.zero_grad(set_to_none=True)
             scaler.scale(discriminator_loss).backward()
             scaler.step(optim_discriminator)
             scheduler_discriminator.step()
 
+            # ------------------------- G UPDATE -------------------------
             if iters % 5 == 0:
-                fake_batch = gen.forward_given_samples(
-                    torch.randn(train_batch.size(0), 128, device=train_batch.device)
-                )
-                discrim_fake = disc(fake_batch.clone())        # and clone here
-                generator_loss = gen_loss_fn(discrim_fake)
-
-                    ##################################################################
-                    #                          END OF YOUR CODE                      #
-                    ##################################################################
-
+                with torch.cuda.amp.autocast(enabled=amp_enabled):
+                    z = torch.randn(train_batch.size(0), 128, device=train_batch.device)
+                    fake_batch = gen.forward_given_samples(z)
+                    # no detach; we want grads through G. clone() guards against D in-place ops
+                    discrim_fake = disc(fake_batch.clone())
+                    generator_loss = gen_loss_fn(discrim_fake)
 
                 optim_generator.zero_grad(set_to_none=True)
                 scaler.scale(generator_loss).backward()
                 scaler.step(optim_generator)
                 scheduler_generator.step()
 
+            scaler.update()
+
+            # ------------------------- LOG/SAVE -------------------------
             if iters % log_period == 0 and iters != 0:
                 with torch.no_grad():
                     with torch.cuda.amp.autocast(enabled=amp_enabled):
-                        ##################################################################
-                        # TODO 1.2: Generate samples using the generator.
-                        # Make sure they lie in the range [0, 1]!
-                        ##################################################################
-                        generated_samples = (gen.forward(100).detach().cpu() + 1) / 2
-                        ##################################################################
-                        #                          END OF YOUR CODE                      #
-                        ##################################################################
-                    save_image(
-                        generated_samples.data.float(),
-                        prefix + "samples_{}.png".format(iters),
-                        nrow=10,
-                    )
-                    if os.environ.get('PYTORCH_JIT', 1):
-                        torch.jit.save(torch.jit.script(gen), prefix + "/generator.pt")
-                        torch.jit.save(torch.jit.script(disc), prefix + "/discriminator.pt")
-                    else:
-                        torch.save(gen, prefix + "/generator.pt")
-                        torch.save(disc, prefix + "/discriminator.pt")
-                    fid = get_fid(
-                        gen,
-                        dataset_name="cub",
-                        dataset_resolution=32,
-                        z_dimension=128,
-                        batch_size=256,
-                        num_gen=10_000,
-                    )
-                    print(f"Iteration {iters} FID: {fid}")
-                    fids_list.append(fid)
-                    iters_list.append(iters)
+                        # generator outputs in [-1,1]; map to [0,1] for saving
+                        samples = (gen.forward(100).detach().cpu() + 1) / 2
 
-                    save_plot(
-                        iters_list,
-                        fids_list,
-                        xlabel="Iterations",
-                        ylabel="FID",
-                        title="FID vs Iterations",
-                        filename=prefix + "fid_vs_iterations",
-                    )
-                    interpolate_latent_space(
-                        gen, prefix + "interpolations_{}.png".format(iters)
-                    )
-            scaler.update()
+                save_image(samples.float(), prefix + f"samples_{iters}.png", nrow=10)
+
+                # JIT save when enabled; fallback to state_dict if scripting fails
+                if os.environ.get("PYTORCH_JIT", "1") == "1":
+                    try:
+                        scripted_gen = torch.jit.script(gen)
+                        scripted_disc = torch.jit.script(disc)
+                        torch.jit.save(scripted_gen, prefix + "/generator.pt")
+                        torch.jit.save(scripted_disc, prefix + "/discriminator.pt")
+                    except Exception as e:
+                        print(f"[WARN] TorchScript save failed: {e}. Falling back to state_dict.")
+                        torch.save(gen.state_dict(), prefix + "/generator.pt")
+                        torch.save(disc.state_dict(), prefix + "/discriminator.pt")
+                else:
+                    torch.save(gen.state_dict(), prefix + "/generator.pt")
+                    torch.save(disc.state_dict(), prefix + "/discriminator.pt")
+
+                # FID (assignment expects JIT enabled here)
+                fid = get_fid(
+                    gen,
+                    dataset_name="cub",
+                    dataset_resolution=32,
+                    z_dimension=128,
+                    batch_size=256,
+                    num_gen=10_000,
+                )
+                print(f"Iteration {iters} FID: {fid}")
+                fids_list.append(fid)
+                iters_list.append(iters)
+
+                save_plot(
+                    iters_list,
+                    fids_list,
+                    xlabel="Iterations",
+                    ylabel="FID",
+                    title="FID vs Iterations",
+                    filename=prefix + "fid_vs_iterations",
+                )
+                interpolate_latent_space(gen, prefix + f"interpolations_{iters}.png")
+
             iters += 1
             pbar.update(1)
+
+    # Final full FID
     fid = get_fid(
         gen,
         dataset_name="cub",

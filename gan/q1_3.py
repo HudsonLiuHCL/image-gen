@@ -35,6 +35,9 @@ def compute_generator_loss(discrim_fake):
 
 
 if __name__ == "__main__":
+    torch.jit.script(Generator())
+    torch.jit.script(Discriminator())
+    print("✅ TorchScript works!")
     args = get_args()
     gen = Generator().to("cuda")
     disc = Discriminator().to("cuda")
