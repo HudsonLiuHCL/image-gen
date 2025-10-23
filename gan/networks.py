@@ -135,6 +135,8 @@ class Generator(torch.jit.ScriptModule):
         self.latent_dim = 128
         self.starting_image_size = starting_image_size
         self.feature_channels = 128
+        self.register_buffer("dummy", torch.empty(0))
+
 
         self.dense = nn.Linear(
             self.latent_dim,
@@ -177,7 +179,8 @@ class Generator(torch.jit.ScriptModule):
         ##################################################################
         # 4️⃣ Auto-generate n_samples of random z and forward through generator
         ##################################################################
-        device = list(self.parameters())[0].device
+        device = self.dummy.device
+
         z = torch.randn(n_samples, self.latent_dim, device=device)
         return self.forward_given_samples(z)
         ##################################################################
