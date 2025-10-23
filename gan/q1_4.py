@@ -1,9 +1,7 @@
 import os
-
 import torch
 import torch.nn.functional as F
 from utils import get_args
-
 from networks import Discriminator, Generator
 from train import train_model
 
@@ -11,27 +9,20 @@ from train import train_model
 def compute_discriminator_loss(
     discrim_real, discrim_fake, discrim_interp, interp, lamb
 ):
-    ##################################################################
-    # TODO: 1.4: Implement LSGAN loss for discriminator.
-    # Do not use discrim_interp, interp, lamb. They are placeholders
-    # for Q1.5.
-    ##################################################################
-    loss = None
-    ##################################################################
-    #                          END OF YOUR CODE                      #
-    ##################################################################
+
+    real_loss = 0.5 * torch.mean((discrim_real - 1) ** 2)
+    fake_loss = 0.5 * torch.mean((discrim_fake - 0) ** 2)
+    loss = real_loss + fake_loss
+
     return loss
 
 
 def compute_generator_loss(discrim_fake):
-    ##################################################################
-    # TODO: 1.4: Implement LSGAN loss for generator.
-    ##################################################################
-    loss = None
-    ##################################################################
-    #                          END OF YOUR CODE                      #
-    ##################################################################
+
+    loss = 0.5 * torch.mean((discrim_fake - 1) ** 2)
+
     return loss
+
 
 if __name__ == "__main__":
     args = get_args()

@@ -28,8 +28,14 @@ def get_optimizers_and_schedulers(gen, disc):
     # The learning rate for the generator should be decayed to 0 over
     # 100K iterations.
     ##################################################################
-    scheduler_discriminator = None
-    scheduler_generator = None
+    scheduler_discriminator = torch.optim.lr_scheduler.LambdaLR(
+        optim_discriminator, 
+        lr_lambda=lambda step: max(0, 1 - step / 500000)
+    )
+    scheduler_generator = torch.optim.lr_scheduler.LambdaLR(
+        optim_generator, 
+        lr_lambda=lambda step: max(0, 1 - step / 100000)
+    )
     ##################################################################
     #                          END OF YOUR CODE                      #
     ##################################################################
@@ -105,8 +111,14 @@ def train_model(
                 # 2. Compute discriminator output on the train batch.
                 # 3. Compute the discriminator output on the generated data.
                 ##################################################################
-                discrim_real = None
-                discrim_fake = None
+                train_batch = train_batch.cuda()
+
+                # 1️⃣ Generator output
+                fake_batch = gen.forward_given_samples(torch.randn(train_batch.size(0), 128, device=train_batch.device))
+
+                # 2️⃣ Discriminator outputs
+                discrim_real = disc(train_batch)
+                discrim_fake = disc(fake_batch.detach()) 
                 ##################################################################
                 #                          END OF YOUR CODE                      #
                 ##################################################################
@@ -115,8 +127,9 @@ def train_model(
                 # TODO 1.5 Compute the interpolated batch and run the
                 # discriminator on it.
                 ###################################################################
-                interp = None
-                discrim_interp = None
+                alpha = torch.rand(train_batch.size(0), 1, 1, 1, device=train_batch.device)
+                interp = (alpha * train_batch + (1 - alpha) * fake_batch).requires_grad_(True)
+                discrim_interp = disc(interp)
                 ##################################################################
                 #                          END OF YOUR CODE                      #
                 ##################################################################
@@ -132,12 +145,10 @@ def train_model(
 
             if iters % 5 == 0:
                 with torch.cuda.amp.autocast(enabled=amp_enabled):
-                    ##################################################################
-                    # TODO 1.2: Compute generator and discriminator output on
-                    # generated data.
-                    ###################################################################
-                    fake_batch = None
-                    discrim_fake = None
+                    fake_batch = gen.forward_given_samples(torch.randn(train_batch.size(0), 128, device=train_batch.device))
+                    discrim_fake = disc(fake_batch)
+                    generator_loss = gen_loss_fn(discrim_fake)
+
                     ##################################################################
                     #                          END OF YOUR CODE                      #
                     ##################################################################
@@ -156,7 +167,7 @@ def train_model(
                         # TODO 1.2: Generate samples using the generator.
                         # Make sure they lie in the range [0, 1]!
                         ##################################################################
-                        generated_samples = None
+                        generated_samples = (gen.forward(100).detach().cpu() + 1) / 2
                         ##################################################################
                         #                          END OF YOUR CODE                      #
                         ##################################################################
