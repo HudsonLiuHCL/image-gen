@@ -114,11 +114,11 @@ def train_model(
                 train_batch = train_batch.cuda()
 
                 # 1️⃣ Generator output
-                fake_batch = gen.forward_given_samples(torch.randn(train_batch.size(0), 128, device=train_batch.device))
-
-                # 2️⃣ Discriminator outputs
+                fake_batch = gen.forward_given_samples(
+                    torch.randn(train_batch.size(0), 128, device=train_batch.device)
+                )
                 discrim_real = disc(train_batch)
-                discrim_fake = disc(fake_batch.detach()) 
+                discrim_fake = disc(fake_batch.detach().clone())  
                 ##################################################################
                 #                          END OF YOUR CODE                      #
                 ##################################################################
@@ -144,16 +144,16 @@ def train_model(
             scheduler_discriminator.step()
 
             if iters % 5 == 0:
-                with torch.cuda.amp.autocast(enabled=amp_enabled):
-                    fake_batch = gen.forward_given_samples(torch.randn(train_batch.size(0), 128, device=train_batch.device))
-                    discrim_fake = disc(fake_batch)
-                    generator_loss = gen_loss_fn(discrim_fake)
+                fake_batch = gen.forward_given_samples(
+                    torch.randn(train_batch.size(0), 128, device=train_batch.device)
+                )
+                discrim_fake = disc(fake_batch.clone())        # and clone here
+                generator_loss = gen_loss_fn(discrim_fake)
 
                     ##################################################################
                     #                          END OF YOUR CODE                      #
                     ##################################################################
 
-                    generator_loss = gen_loss_fn(discrim_fake)
 
                 optim_generator.zero_grad(set_to_none=True)
                 scaler.scale(generator_loss).backward()
