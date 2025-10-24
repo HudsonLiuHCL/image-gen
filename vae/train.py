@@ -18,7 +18,8 @@ def ae_loss(model, x):
     ##################################################################
     # TODO 2.2: Fill in MSE loss between x and its reconstruction.
     ##################################################################
-    x_hat = model(x)
+    z = model.encoder(x)
+    x_hat = model.decoder(z)
     loss = F.mse_loss(x_hat, x)
     ##################################################################
     #                          END OF YOUR CODE                      #
