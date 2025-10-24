@@ -27,25 +27,34 @@ def ae_loss(model, x):
 
     return loss, OrderedDict(recon_loss=loss)
 
-def vae_loss(model, x, beta = 1):
-    """
-    TODO 2.5 : Fill in recon_loss and kl_loss.
-    NOTE: For the kl loss term for the VAE, implement the loss in closed form, you can find the formula here:
-    (https://stats.stackexchange.com/questions/318748/deriving-the-kl-divergence-loss-for-vaes).
-    return loss, {recon_loss = loss}
-    """
-    mu, log_std = model.encoder(x)        
+def vae_loss(model, x, beta=1):
+    # Encode
+    mu, log_std = model.encoder(x)
     std = torch.exp(log_std)
     eps = torch.randn_like(std)
-    z = mu + std * eps            
-    x_recon = model.decoder(z)       
+    z = mu + std * eps  # reparameterization
+    # Decode
+    x_recon = model.decoder(z)
 
-    recon_loss = F.mse_loss(x_recon, x, reduction='mean')
+    # -------------------------------
+    # Reconstruction Loss
+    # -------------------------------
+    # Sum over all pixels per image, average over batch
+    recon_loss = F.mse_loss(x_recon, x, reduction='none')
+    recon_loss = recon_loss.view(x.size(0), -1).sum(dim=1).mean()
+
+    # -------------------------------
+    # KL Divergence Loss
+    # -------------------------------
     logvar = 2 * log_std
     kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1).mean()
-    total_loss = recon_loss + beta * kl_loss
 
+    # -------------------------------
+    # Total
+    # -------------------------------
+    total_loss = recon_loss + beta * kl_loss
     return total_loss, OrderedDict(recon_loss=recon_loss, kl_loss=kl_loss)
+
 
 
 
