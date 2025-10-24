@@ -34,18 +34,15 @@ def vae_loss(model, x, beta = 1):
     (https://stats.stackexchange.com/questions/318748/deriving-the-kl-divergence-loss-for-vaes).
     return loss, {recon_loss = loss}
     """
-    ##################################################################
-    # TODO 2.5: Fill in recon_loss and kl_loss.
-    # NOTE: For the kl loss term for the VAE, implement the loss in
-    # closed form, you can find the formula here:
-    # (https://stats.stackexchange.com/questions/318748/deriving-the-kl-divergence-loss-for-vaes).
-    ##################################################################
-    total_loss = None
-    recon_loss = None
-    kl_loss = None
-    ##################################################################
-    #                          END OF YOUR CODE                      #
-    ##################################################################
+    x_recon, mu, log_std = model(x)
+
+    recon_loss = F.mse_loss(x_recon, x, reduction='mean')
+
+    logvar = 2 * log_std
+    kl = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
+    kl_loss = kl.mean()
+
+    total_loss = recon_loss + beta * kl_loss
     return total_loss, OrderedDict(recon_loss=recon_loss, kl_loss=kl_loss)
 
 

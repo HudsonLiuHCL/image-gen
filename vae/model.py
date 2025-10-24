@@ -39,13 +39,14 @@ class VAEEncoder(Encoder):
     def __init__(self, input_shape, latent_dim):
         super().__init__(input_shape, latent_dim)
         ##################################################################
-        # TODO 2.4: Fill in self.fc, such that output dimension is
-        # 2*self.latent_dim
+        # Output should be twice the latent dimension: μ and logσ
         ##################################################################
-        self.fc = None
-        ##################################################################
-        #                          END OF YOUR CODE                      #
-        ##################################################################
+        with torch.no_grad():
+            dummy = torch.zeros(1, *input_shape)
+            conv_out = self.convs(dummy)
+            flattened_dim = conv_out.numel()
+
+        self.fc = nn.Linear(flattened_dim, 2 * latent_dim)
 
     def forward(self, x):
         ##################################################################
