@@ -33,30 +33,36 @@ class DiffusionModel(nn.Module):
         # TODO 3.1: Compute the cumulative products for current and
         # previous timesteps.
         ##################################################################
-        self.alphas_cumprod = None
-        self.alphas_cumprod_prev =  None
+        self.alphas_cumprod = torch.cumprod(alphas, dim=0)
+        self.alphas_cumprod_prev = F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
 
         ##################################################################
         # TODO 3.1: Pre-compute values needed for forward process.
         ##################################################################
         # This is the coefficient of x_t when predicting x_0
-        self.x_0_pred_coef_1 = None
+        self.x_0_pred_coef_1 = 1.0 / torch.sqrt(self.alphas_cumprod)
         # This is the coefficient of pred_noise when predicting x_0
-        self.x_0_pred_coef_2 = None
+        self.x_0_pred_coef_2 = torch.sqrt(1.0 - self.alphas_cumprod) / torch.sqrt(self.alphas_cumprod)
 
         ##################################################################
         # TODO 3.1: Compute the coefficients for the mean.
         ##################################################################
         # This is coefficient of x_0 in the DDPM section
-        self.posterior_mean_coef1 = None
+        self.posterior_mean_coef1 = (
+            self.betas * torch.sqrt(self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
+        )
         # This is coefficient of x_t in the DDPM section
-        self.posterior_mean_coef2 = None
+        self.posterior_mean_coef2 = (
+            torch.sqrt(alphas) * (1.0 - self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
+        )
 
         ##################################################################
         # TODO 3.1: Compute posterior variance.
         ##################################################################
         # Calculations for posterior q(x_{t-1} | x_t, x_0) in DDPM
-        self.posterior_variance = None
+        self.posterior_variance = (
+            self.betas * (1.0 - self.alphas_cumprod_prev) / (1.0 - self.alphas_cumprod)
+        )
         ##################################################################
         #                          END OF YOUR CODE                      #
         ##################################################################
@@ -89,10 +95,16 @@ class DiffusionModel(nn.Module):
         # get_posterior_parameters() for usage examples.
         # 
         ##################################################################
-        pred_noise = None
-        x_0 = None
+        pred_noise = self.model(x_t, t)
+        
+        # Predict x_0 using the reparametrization formula
+        x_0 = (
+            extract(self.x_0_pred_coef_1, t, x_t.shape) * x_t -
+            extract(self.x_0_pred_coef_2, t, x_t.shape) * pred_noise
+        )
         
         # TODO 3.1: Make sure to clamp x_0 between -1 and 1.0
+        x_0 = torch.clamp(x_0, -1.0, 1.0)
         
         ##################################################################
         #                          END OF YOUR CODE                      #
@@ -108,8 +120,18 @@ class DiffusionModel(nn.Module):
         # Hint: To do this, you will need a predicted x_0. You should've
         # already implemented a function to give you x_0 above!
         ##################################################################
-        pred_img = None
-        x_0 = None
+        # Get predicted noise and x_0
+        pred_noise, x_0 = self.model_predictions(x, t)
+        
+        # Get posterior parameters (mean and variance)
+        posterior_mean, posterior_variance, posterior_log_variance_clipped = self.get_posterior_parameters(x_0, x, t)
+        
+        # Sample noise z ~ N(0, I) if t > 1, otherwise z = 0
+        noise = torch.randn_like(x) if (t[0] > 0).all() else torch.zeros_like(x)
+        
+        # Apply reparametrization trick: x_{t-1} = mu + sigma * z
+        pred_img = posterior_mean + torch.sqrt(posterior_variance) * noise
+        
         ##################################################################
         #                          END OF YOUR CODE                      #
         ##################################################################
