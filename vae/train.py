@@ -63,13 +63,15 @@ def constant_beta_scheduler(target_val = 1):
         return target_val
     return _helper
 
-def linear_beta_scheduler(max_epochs=None, target_val = 1):
+def linear_beta_scheduler(max_epochs=None, target_val=1):
     ##################################################################
     # TODO 2.8: Fill in helper. The value returned should increase
     # linearly from 0 at epoch 0 to target_val at epoch max_epochs.
     ##################################################################
     def _helper(epoch):
-        pass
+        if max_epochs is None or max_epochs == 0:
+            return target_val
+        return min(target_val * (epoch / max_epochs), target_val)
     ##################################################################
     #                          END OF YOUR CODE                      #
     ##################################################################
