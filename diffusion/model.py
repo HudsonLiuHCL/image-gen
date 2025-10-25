@@ -160,25 +160,44 @@ class DiffusionModel(nn.Module):
         ##################################################################
         # Step 1: Predict x_0 and the additive noise for tau_i
         
-        # Make tau_isub1 0 , incase it is below 0
-        if tau_isub1 < 0:
-            tau_isub1 = 0        
-
+        # Make tau_isub1 0, in case it is below 0
+        tau_isub1 = max(tau_isub1, 0)
         
-        x_0 = None
+        # Create batched timesteps for current timestep tau_i
+        batched_times = torch.full((batch,), tau_i, device=device, dtype=torch.long)
+        
+        # Predict noise and x_0 at timestep tau_i
+        pred_noise, x_0 = model_predictions(img, batched_times)
 
         # Step 2: Extract \alpha_{\tau_{i - 1}} and \alpha_{\tau_{i}}
-        pass
+        # Get alpha_cumprod at current timestep tau_i
+        alpha_tau_i = extract(alphas_cumprod, batched_times, img.shape)
+        
+        # Get alpha_cumprod at previous timestep tau_{i-1}
+        batched_times_prev = torch.full((batch,), tau_isub1, device=device, dtype=torch.long)
+        alpha_tau_isub1 = extract(alphas_cumprod, batched_times_prev, img.shape)
 
         # Step 3: Compute \sigma_{\tau_{i}}
-        pass
+        # Formula: sigma_tau_i^2 = eta * beta_tilde_tau_i
+        # where beta_tilde_tau_i = (1 - alpha_{tau_{i-1}}) / (1 - alpha_{tau_i}) * (1 - alpha_{tau_i} / alpha_{tau_{i-1}})
+        # This simplifies to: sigma = eta * sqrt((1 - alpha_{tau_{i-1}}) / (1 - alpha_{tau_i}) * (1 - alpha_{tau_i} / alpha_{tau_{i-1}}))
+        sigma_tau_i = eta * torch.sqrt(
+            (1 - alpha_tau_isub1) / (1 - alpha_tau_i) * (1 - alpha_tau_i / alpha_tau_isub1)
+        )
 
         # Step 4: Compute the coefficient of \epsilon_{\tau_{i}}
-        pass
+        # This is the "direction pointing to x_t" term
+        # Formula: sqrt(1 - alpha_{tau_{i-1}} - sigma_tau_i^2)
+        coef_epsilon = torch.sqrt(1 - alpha_tau_isub1 - sigma_tau_i ** 2)
 
-        # Step 5: Sample from q(x_{\tau_{i - 1}} | x_{\tau_t}, x_0)
+        # Step 5: Sample from q(x_{\tau_{i - 1}} | x_{\tau_i}, x_0)
         # HINT: Use the reparameterization trick
-        img = None
+        # Formula: x_{tau_{i-1}} = sqrt(alpha_{tau_{i-1}}) * x_0 + sqrt(1 - alpha_{tau_{i-1}} - sigma^2) * epsilon + sigma * z
+        # Sample noise z ~ N(0, I) if tau_{i-1} > 0, otherwise z = 0 (no noise for final step)
+        noise = torch.randn_like(img) if tau_isub1 > 0 else torch.zeros_like(img)
+        
+        # Compute x_{tau_{i-1}} using the DDIM update rule
+        img = torch.sqrt(alpha_tau_isub1) * x_0 + coef_epsilon * pred_noise + sigma_tau_i * noise
         ##################################################################
         #                          END OF YOUR CODE                      #
         ##################################################################
