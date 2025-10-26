@@ -14,7 +14,36 @@ def get_fid(gen, dataset_name, dataset_resolution, z_dimension, batch_size, num_
     # diffusion model given z
     # Note: The output must be in the range [0, 255]!
     ##################################################################
-    gen_fn = None
+    def gen_fn(z):
+        """
+        Generator function that takes latent noise z and returns images in [0, 255] range.
+        
+        Args:
+            z: Latent noise tensor of shape (batch_size, z_dimension)
+        
+        Returns:
+            images: Generated images in range [0, 255] with shape (batch_size, 3, H, W)
+        """
+        # Reshape z to image dimensions (batch_size, channels, height, width)
+        batch_size = z.shape[0]
+        channels = 3  # CIFAR-10 has 3 color channels
+        height = width = dataset_resolution  # 32x32 for CIFAR-10
+        img_shape = (batch_size, channels, height, width)
+        
+        # Generate samples using the diffusion model with given z
+        # The sample_given_z method generates images from provided noise
+        generated_images = gen.sample_given_z(z, img_shape)
+        
+        # Convert from [0, 1] range to [0, 255] range
+        # The diffusion model outputs images in [0, 1] after unnormalization
+        images_255 = generated_images * 255.0
+        
+        # Clamp to ensure values are exactly in [0, 255]
+        images_255 = torch.clamp(images_255, 0, 255)
+        
+        return images_255
+    
+    gen_fn = gen_fn
     ##################################################################
     #                          END OF YOUR CODE                      #
     ##################################################################
